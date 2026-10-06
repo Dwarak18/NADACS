@@ -1,0 +1,72 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-nadacs}
+      POSTGRES_USER: ${POSTGRES_USER:-nadacs}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nadacs}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  audit-log:
+    build: ./audit-log
+    environment:
+      DATABASE_URL: postgresql://nadacs:nadacs@postgres:5432/nadacs
+    ports:
+      - "8010:8010"
+    depends_on:
+      - postgres
+
+  enforcement:
+    build: ./enforcement
+    environment:
+      AUDIT_LOG_URL: http://audit-log:8010
+      ENFORCEMENT_MODE: ${ENFORCEMENT_MODE:-simulated-openflow}
+    ports:
+      - "8090:8090"
+    depends_on:
+      - audit-log
+
+  decision-engine:
+    build: ./decision-engine
+    environment:
+      AUTO_CONTAIN_THRESHOLD: ${AUTO_CONTAIN_THRESHOLD:-0.85}
+      REVIEW_THRESHOLD: ${REVIEW_THRESHOLD:-0.60}
+      ENFORCEMENT_URL: http://enforcement:8090
+      AUDIT_LOG_URL: http://audit-log:8010
+      FAILURE_MODE: ${FAILURE_MODE:-fail-open}
+    ports:
+      - "8080:8080"
+    depends_on:
+      - enforcement
+      - audit-log
+
+  detection-engine:
+    build: ./detection-engine
+    environment:
+      DECISION_ENGINE_URL: http://decision-engine:8080
+      AUDIT_LOG_URL: http://audit-log:8010
+    ports:
+      - "8000:8000"
+    depends_on:
+      - decision-engine
+      - audit-log
+
+  dashboard:
+    build: ./dashboard
+    environment:
+      VITE_DECISION_ENGINE_URL: http://localhost:8080
+      VITE_ENFORCEMENT_URL: http://localhost:8090
+      VITE_AUDIT_LOG_URL: http://localhost:8010
+    ports:
+      - "5173:5173"
+    depends_on:
+      - decision-engine
+      - enforcement
+      - audit-log
+
+volumes:
+  postgres-data:
+
